@@ -22,7 +22,7 @@ class StdioTransport:
         """Start the stdio event loop, reading JSON-RPC from stdin."""
         reader = asyncio.StreamReader()
         protocol = asyncio.StreamReaderProtocol(reader)
-        await asyncio.get_event_loop().connect_read_pipe(
+        await asyncio.get_running_loop().connect_read_pipe(
             lambda: protocol, sys.stdin.buffer
         )
 

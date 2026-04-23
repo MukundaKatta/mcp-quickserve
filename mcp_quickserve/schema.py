@@ -57,7 +57,7 @@ def _resolve_type(annotation: Any) -> dict[str, Any]:
 def _parse_docstring_params(docstring: str | None) -> dict[str, str]:
     """Extract parameter descriptions from a docstring.
 
-    Supports simple formats like:
+    Supports Google-style "Args:" sections and simple formats like:
         param_name: description text
         param_name -- description text
     """
@@ -67,14 +67,58 @@ def _parse_docstring_params(docstring: str | None) -> dict[str, str]:
     descriptions: dict[str, str] = {}
     lines = docstring.strip().split("\n")
 
+    # Section headers (e.g. "Args:", "Returns:", "Raises:") that should not
+    # be treated as parameter names even though they are valid identifiers.
+    _SECTION_HEADERS = {
+        "args", "arguments", "parameters", "params",
+        "returns", "return", "yields", "yield",
+        "raises", "raise", "except", "exceptions",
+        "note", "notes", "example", "examples",
+        "attributes", "todo",
+    }
+
+    in_args_section = False
+    args_indent: int | None = None
+
     for line in lines:
         stripped = line.strip()
+        if not stripped:
+            continue
+
+        # Detect section headers like "Args:", "Returns:", etc.
+        lower = stripped.lower().rstrip(":")
+        if lower in _SECTION_HEADERS and stripped.endswith(":"):
+            in_args_section = lower in {"args", "arguments", "parameters", "params"}
+            args_indent = None
+            continue
+
+        if not in_args_section:
+            continue
+
+        # Determine indentation level of the first param line so we can
+        # ignore continuation/nested lines.
+        current_indent = len(line) - len(line.lstrip())
+        if args_indent is None:
+            args_indent = current_indent
+        elif current_indent < args_indent:
+            # We've left the args block
+            in_args_section = False
+            continue
+        elif current_indent > args_indent:
+            # Continuation line of a previous param — skip
+            continue
+
         # Match "param_name: description" or "param_name -- description"
         for separator in [":", " -- ", " - "]:
             if separator in stripped:
                 parts = stripped.split(separator, 1)
                 name = parts[0].strip().lstrip("-").strip()
-                if name.isidentifier() and len(parts) > 1:
+                if (
+                    name.isidentifier()
+                    and name.lower() not in _SECTION_HEADERS
+                    and len(parts) > 1
+                    and parts[1].strip()
+                ):
                     descriptions[name] = parts[1].strip()
                 break
 
